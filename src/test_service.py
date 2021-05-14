@@ -29,4 +29,5 @@ async def test_post(aiohttp_client, loop):
         assert False, f"Exception {e}"
 
     assert resp.status == 200, f"Got response for {url} {resp.status} {resp.text}"
-    await HeadlessnessServer.browser.close()
+    if HeadlessnessServer.browser is not None:
+        await HeadlessnessServer.browser.close()

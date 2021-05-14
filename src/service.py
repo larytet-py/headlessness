@@ -101,19 +101,32 @@ class HeadlessnessServer:
             timeout=self._timeout,
             ad_block=self._ad_block,
         )
+        browser = HeadlessnessServer.browser
+        close_browser = False
+        if browser is None:
+            browser = await get_browser(headless=headless)
+            close_browser = True
+
+        result = True
         try:
             await page.load_page(
                 request_id=self._transaction_id,
                 url=self._url,
-                browser=HeadlessnessServer.browser,
+                browser=browser,
                 headless=headless,
             )
         except Exception as e:
-            return False, str(e)
+            result = False
+            report_str = str(e)
 
-        report = generate_report(self._url, self._transaction_id, page)
-        report_str = json.dumps(report, indent=2)
-        return True, report_str
+        if close_browser:
+            await browser.close()
+
+        if result:
+            report = generate_report(self._url, self._transaction_id, page)
+            report_str = json.dumps(report, indent=2)
+
+        return result, report_str
 
     async def _process_post(self, parsed_url, headless):
         if parsed_url.path not in ["/fetch"]:
@@ -144,9 +157,9 @@ class HeadlessnessServer:
     @staticmethod
     async def do_POST(request):
         headless = request.app["headless"]
-        async with HeadlessnessServer.main_lock:
-            if HeadlessnessServer.browser is None:
-                HeadlessnessServer.browser = await get_browser(headless=headless)
+        # async with HeadlessnessServer.main_lock:
+        #    if HeadlessnessServer.browser is None:
+        #        HeadlessnessServer.browser = await get_browser(headless=headless)
 
         parsed_url = urlparse(request.path_qs)
         parameters = parse_qs(parsed_url.query)
@@ -201,9 +214,12 @@ def main(headless=False):
     logger = create_logger()
     app, http_interface, http_port = create_server(logger, headless)
 
+    loop = asyncio.get_event_loop()
+    handler = app.make_handler()
     f = loop.create_server(handler, http_interface, http_port)
+    srv = loop.run_until_complete(f)
     logger.info(f"Serving on {http_interface}:{http_port} {srv}")
-    asyncio.run(f)
+    loop.run_forever()
 
 
 if __name__ == "__main__":
