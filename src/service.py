@@ -201,12 +201,9 @@ def main(headless=False):
     logger = create_logger()
     app, http_interface, http_port = create_server(logger, headless)
 
-    loop = asyncio.get_event_loop()
-    handler = app.make_handler()
     f = loop.create_server(handler, http_interface, http_port)
-    srv = loop.run_until_complete(f)
     logger.info(f"Serving on {http_interface}:{http_port} {srv}")
-    loop.run_forever()
+    asyncio.run(f)
 
 
 if __name__ == "__main__":
