@@ -224,6 +224,7 @@ class Page:
     # https://stackoverflow.com/questions/48986851/puppeteer-get-request-redirects
     async def _get_page(self):
         page = await self._browser.newPage()
+        await page.setCacheEnabled(enabled=True)
         # https://github.com/pyppeteer/pyppeteer/issues/198
         # await page.setRequestInterception(True)
         page.on(

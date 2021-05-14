@@ -157,9 +157,9 @@ class HeadlessnessServer:
     @staticmethod
     async def do_POST(request):
         headless = request.app["headless"]
-        # async with HeadlessnessServer.main_lock:
-        #    if HeadlessnessServer.browser is None:
-        #        HeadlessnessServer.browser = await get_browser(headless=headless)
+        async with HeadlessnessServer.main_lock:
+            if HeadlessnessServer.browser is None:
+                HeadlessnessServer.browser = await get_browser(headless=headless)
 
         parsed_url = urlparse(request.path_qs)
         parameters = parse_qs(parsed_url.query)
