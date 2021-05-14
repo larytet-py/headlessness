@@ -13,7 +13,7 @@ from process_url import (
     generate_report,
     AdBlock,
 )
-
+from fork import call_timeout
 
 @dataclass
 class Statistics:
@@ -45,12 +45,19 @@ class LoggerAdapter(logging.LoggerAdapter):
 
 
 def _get_url_parameter(parameters, name, default=""):
-    return parameters.get(name, [default])[0]
+    if isinstance(default, str):
+        return parameters.get(name, [default])[0]
+    if isinstance(default, int):
+        res = parameters.get(name, [str(default)])[0]
+        return int(res)
+    if isinstance(default, float):
+        res = parameters.get(name, [str(default)])[0]
+        return float(res)
 
 
 class HeadlessnessServer(BaseHTTPRequestHandler):
-    def __init__(self, logger, asyncio_loop):
-        self.logger, self._asyncio_loop = logger, asyncio_loop
+    def __init__(self, logger):
+        self.logger = logger
         self.ad_block = AdBlock(["./ads-servers.txt", "./ads-servers.he.txt"])
 
     def __call__(self, *args, **kwargs):
@@ -102,11 +109,13 @@ class HeadlessnessServer(BaseHTTPRequestHandler):
         )
         return True
 
-    def _fech_page(self, url):
+    def _fetch_page(self):
+        self.logger.info(f"Fetching {self.url}")
         page = Page(
-            self._logger, timeout=30.0, keep_alive=False, ad_block=self.ad_block
+            self._logger, timeout=timeout, keep_alive=False, ad_block=self.ad_block
         )
-        self._asyncio_loop.run_until_complete(page.load_page(self._transaction_id, url))
+        asyncio_loop = asyncio.get_event_loop()
+        asyncio_loop.run_until_complete(page.load_page(self._transaction_id, self.url))
 
         report = generate_report(url, self._transaction_id, page)
         report_str = json.dumps(report, indent=2)
@@ -121,16 +130,24 @@ class HeadlessnessServer(BaseHTTPRequestHandler):
             return
 
         parameters = parse_qs(parsed_url.query)
-        url = _get_url_parameter(parameters, "url", None)
-        if url is None:
+        self.url = _get_url_parameter(parameters, "url", None)
+        if self.url is None:
             _statistics.bad_url_parameters += 1
             err_msg = f"Missing URL parameter {parsed_url.path}"
             self._logger.error(err_msg)
             self._400(err_msg)
             return
 
-        report = self._fech_page(url)
+        timeout = _get_url_parameter(parameters, "timeout", 30.0)
 
+        data = {}
+
+        # os.fork + UNIX pipe magic
+        call_timeout(timeout, self._fetch_page, data)
+
+        logs=data.get("logs", f"No error log {data}")
+        report=data.get("report", f"Failed {logs}")
+        
         self._200(report)
 
     def do_POST(self):
@@ -168,9 +185,8 @@ def main():
 
     http_port = int(environ.get("PORT", 8081))
     http_interface = environ.get("INTERFACE", "0.0.0.0")
-    asyncio_loop = asyncio.get_event_loop()
     http_server = ThreadingHTTPServer(
-        (http_interface, http_port), HeadlessnessServer(logger, asyncio_loop)
+        (http_interface, http_port), HeadlessnessServer(logger)
     )
     http_server_thread = Thread(target=http_server.serve_forever)
     http_server_thread.start()

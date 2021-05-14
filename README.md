@@ -14,6 +14,7 @@ remmina -c $PWD/local-chrome.remmina
 
 ## Links
 
+* https://github.com/dhamaniasad/HeadlessBrowsers - Collection of links
 * http://www.smartjava.org/content/using-puppeteer-in-docker/
 * https://blog.logrocket.com/how-to-set-up-a-headless-chrome-node-js-server-in-docker/
 * https://paul.kinlan.me/hosting-puppeteer-in-a-docker-container/
