@@ -77,10 +77,23 @@ class AdBlockDummy:
 
 
 async def get_browser(headless=True):
+    chrome_args = ["--no-sandbox"]
+    disable_cache = True  # does not appear to impact the performance
+    if disable_cache:
+        chrome_args += [
+            "--disk-cache-size=0",
+            "--disable-application-cache",
+            "--enable-aggressive-domstorage-flushing",
+        ]
+    else:
+        chrome_args += [
+            f"--disk-cache-size={100_000_000}",
+        ]
+
     browser = await launch(
         {
             "headless": headless,
-            "args": ["--no-sandbox"],
+            "args": chrome_args,
             "executablePath": "/usr/bin/google-chrome-stable",
             "logLevel": logging.ERROR,
         }
@@ -224,7 +237,11 @@ class Page:
     # https://stackoverflow.com/questions/48986851/puppeteer-get-request-redirects
     async def _get_page(self):
         page = await self._browser.newPage()
+
+        # "True" is deafult value
+        # 30-50% reduction in processing time
         await page.setCacheEnabled(enabled=True)
+
         # https://github.com/pyppeteer/pyppeteer/issues/198
         # await page.setRequestInterception(True)
         page.on(
