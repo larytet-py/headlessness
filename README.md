@@ -9,12 +9,12 @@ black src/. && docker build --build-arg CACHEBUST=$(date +%s) -t chrome .
 
 Check a single URL
 ```
-docker run -p 5900:5900 -e KEEP_ALIVE="false" -e TIMEOUT="30.0" -e REQUEST_ID="1" -e URL="http://www.google.com" chrome 
+docker run --rm -p 5900:5900 -e KEEP_ALIVE="false" -e TIMEOUT="30.0" -e REQUEST_ID="1" -e URL="https://www.w3schools.com/" chrome 
 ```
 or start the service
 ```
-docker run -p 5900:5900 -p 8081:8081 -e TIMEOUT="30.0" chrome 
-curl -X POST "http://0.0.0.0:8081/fetch?url=http%3A%2F%2Fgoogle.com&transaction_id=1"
+docker run --rm -p 5900:5900 -p 8081:8081 -e TIMEOUT="30.0" chrome 
+curl -X POST "http://0.0.0.0:8081/fetch?url=https%3A%2F%2Fwww.w3schools.com%2F&transaction_id=1"
 ```
 
 Try VNC 127.0.0.1:5900

@@ -1,3 +1,4 @@
+import asyncio
 from urllib.parse import urlparse, parse_qs
 import logging
 from threading import Semaphore
@@ -12,7 +13,6 @@ from process_url import (
     generate_report,
     AdBlock,
 )
-from fork import AsyncCall
 
 
 @dataclass
@@ -58,13 +58,14 @@ def _get_url_parameter(parameters, name, default=""):
 
 
 class HeadlessnessServer:
+    _throttle_max, _throttle = 1, Semaphore(1)
+
     def __init__(self, logger, request):
         self._logger, self._ad_block = logger, request.app["ad_block"]
         # default process at most 1 query
-        self._throttle_max, self._throttle = 1, Semaphore(1)
 
     @staticmethod
-    def _check_throttle(self):
+    def _check_throttle():
         time_start = time()
         if not HeadlessnessServer._throttle.acquire(blocking=True, timeout=40.0):
             _statistics.throttle_failed += 1
@@ -88,17 +89,22 @@ class HeadlessnessServer:
         """
         Called after if os.fork() == 0
         """
-        self._logger.info(f"Fetching {url}")
+        self._logger.info(f"Fetching {self._url}")
         page = Page(
             logger=self._logger,
             timeout=self._timeout,
             keep_alive=False,
             ad_block=self._ad_block,
         )
-        await page.load_page(self._transaction_id, self._url)
+        try:
+            await page.load_page(self._transaction_id, self._url)
+        except Exception as e:
+            return str(e)
+
         report = generate_report(self._url, self._transaction_id, page)
         report_str = json.dumps(report, indent=2)
         results["report"] = report_str
+        return None
 
     async def _process_post(self, parsed_url):
         if parsed_url.path not in ["/fetch"]:
@@ -109,7 +115,7 @@ class HeadlessnessServer:
 
         parameters = parse_qs(parsed_url.query)
         self._url = _get_url_parameter(parameters, "url", None)
-        if self._ is None:
+        if self._url is None:
             _statistics.bad_url_parameters += 1
             err_msg = f"Missing URL parameter {parsed_url.path}"
             self._logger.error(err_msg)
@@ -118,20 +124,21 @@ class HeadlessnessServer:
         self._timeout = _get_url_parameter(parameters, "timeout", 30.0)
         self._transaction_id = _get_url_parameter(parameters, "transaction_id")
 
-        await self._fetch_page(results)
-        report = results.get("report", f"Failed for {url}, results={results}")
+        results = {}
+        error = await self._fetch_page(results)
+        report = results.get("report", f"Failed for {self._url}, results={results}")
         if error is not None:
-            err_msg = f"Fetch failed for {url}: {error}"
+            err_msg = f"Fetch failed for {self._url}: {error}"
             self._logger.error(err_msg)
             return web.HTTPNotFound(reason=err_msg)
 
         error = results.get("error", None)
         if error is not None:
-            err_msg = f"Fetch failed for {url}: {error}"
+            err_msg = f"Fetch failed for {self._url}: {error}"
             self._logger.error(err_msg)
             return web.HTTPNotFound(reason=err_msg)
 
-        return web.HTTPSuccessful(reason=report)
+        return web.HTTPSuccessful(text=report)
 
     @staticmethod
     async def do_POST(request):
@@ -139,40 +146,60 @@ class HeadlessnessServer:
         parameters = parse_qs(parsed_url.query)
 
         transaction_id = _get_url_parameter(parameters, "transaction_id")
-        logger = LoggerAdapter(self.logger, transaction_id)
+        logger = LoggerAdapter(request.app["logger"], transaction_id)
+
         logger.debug(
-            "POST request, path %s, headers %s", str(self.path), str(self.headers)
+            "POST request, path %s, headers %s",
+            str(request.path_qs),
+            str(request.headers),
         )
         if not HeadlessnessServer._check_throttle():
             err_msg = "Too many requests"
-            self._logger.error(err_msg)
+            logger.error(err_msg)
             raise web.HTTPNotFound(reason=err_msg)
 
         headlessness_server = HeadlessnessServer(logger, request)
-        response = await self._process_post(parsed_url)
+        response = await headlessness_server._process_post(parsed_url)
         HeadlessnessServer._throttle.release()
         raise response
 
 
-def main():
+def create_logger():
     logger = logging.getLogger("headlessness")
     logger_format = "%(levelname)s:%(filename)s:%(lineno)d:%(message)s"
     logging.basicConfig(format=logger_format)
     loglevel = environ.get("LOG_LEVEL", "INFO").upper()
     logger.setLevel(loglevel)
     logger.debug("I am using debug log level")
+    return logger
 
-    http_port = int(environ.get("PORT", 8081))
+
+def create_server(logger):
+    """
+    https://docs.aiohttp.org/en/v0.22.4/web.html
+    """
+
+    http_port = int(environ.get("PORT", "8081"))
     http_interface = environ.get("INTERFACE", "0.0.0.0")
-    logger.info(f"I am listening {http_interface}:{http_port}")
 
     app = web.Application()
     app["ad_block"] = AdBlock(["./ads-servers.txt", "./ads-servers.he.txt"])
+    app["logger"] = logger
 
-    app.router.add_post("/fetch", do_POST)
-    web.run_app(app, host=http_interface, port=http_port)
+    app.router.add_post("/fetch", HeadlessnessServer.do_POST)
+    loop = asyncio.get_event_loop()
+    handler = app.make_handler()
+    f = loop.create_server(handler, http_interface, http_port)
+    srv = loop.run_until_complete(f)
+    return srv, loop, http_interface, http_port
+
+
+def main():
+    logger = create_logger()
+    _, loop, http_interface, http_port = create_server(logger)
+    logger.info(f"Serving on {http_interface}:{http_port}")
+    loop.run_forever()
 
 
 if __name__ == "__main__":
-    is_running = True
     main()

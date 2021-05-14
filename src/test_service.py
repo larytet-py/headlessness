@@ -1,5 +1,4 @@
 import pytest
-from service import main
 from requests import post
 import traceback
 
@@ -9,20 +8,18 @@ def pytest_keyboard_interrupt(excinfo):
     traceback.format_exc()
 
 
-def setup_module(module):
-    module.http_server_thread, module.http_server = main()
+@pytest.mark.asyncio
+async def setup_module(module):
+    pass
 
 
-def teardown_module(module):
-    print(
-        "Tearing down ...",
-    )
-    module.http_server.shutdown()
-    module.http_server_thread.join()
-    print("completed")
+@pytest.mark.asyncio
+async def teardown_module(module):
+    pass
 
 
-def test_post():
+@pytest.mark.asyncio
+async def t1st_post():
     url = "http://0.0.0.0:8081/futch?url=http%3A%2F%2Fgoogle.com&transaction_id=2"
     request_result = post(url)
     assert (
