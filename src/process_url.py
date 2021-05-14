@@ -251,7 +251,7 @@ class _PageTrace:
             if page not in _PageTrace._created_pages:
                 continue
             ts = _PageTrace._created_pages[page]
-            if now - ts > 30.0:
+            if now - ts > 5.0:
                 await page.close()
                 del _PageTrace._created_pages[page]
 

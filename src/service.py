@@ -5,6 +5,7 @@ import logging
 from time import time
 from os import environ
 from dataclasses import dataclass
+from dataclasses_json import dataclass_json
 import json
 from aiohttp import web
 
@@ -17,8 +18,10 @@ from process_url import (
 
 
 @dataclass
+@dataclass_json
 class Statistics:
-    timer_1s: int = 0
+    e2e_latency: float = 0
+    e2e_latency_max: float = 0
 
     throttle_latency: float = 0
     throttle_latency_max: float = 0
@@ -55,7 +58,7 @@ def _get_url_parameter(parameters, name, default=""):
 
 
 class HeadlessnessServer:
-    _throttle_max = 1
+    _throttle_max = 10
     _throttle = asyncio.Semaphore(_throttle_max)
 
     browser = None
@@ -107,6 +110,7 @@ class HeadlessnessServer:
             _statistics.unknow_post += 1
             err_msg = f"Unknown post {parsed_url.path}"
             self._logger.error(err_msg)
+            _statistics.resp_400 += 1
             return web.HTTPNotFound(reason=err_msg)
 
         parameters = parse_qs(parsed_url.query)
@@ -115,6 +119,7 @@ class HeadlessnessServer:
             _statistics.bad_url_parameters += 1
             err_msg = f"Missing URL parameter {parsed_url.path}"
             self._logger.error(err_msg)
+            _statistics.resp_400 += 1
             return web.HTTPNotFound(reason=err_msg)
 
         self._timeout = _get_url_parameter(parameters, "timeout", 30.0)
@@ -124,12 +129,16 @@ class HeadlessnessServer:
         if not ok:
             err_msg = f"Fetch failed for {self._url}: {report}"
             self._logger.error(err_msg)
+            _statistics.resp_400 += 1
             return web.HTTPNotFound(reason=err_msg)
 
+        _statistics.resp_200 += 1
         return web.HTTPOk(text=report)
 
     @staticmethod
-    async def do_POST(request):
+    async def do_fetch(request):
+        time_start = time()
+
         headless = request.app["headless"]
         async with HeadlessnessServer.main_lock:
             if HeadlessnessServer.browser is None:
@@ -151,11 +160,34 @@ class HeadlessnessServer:
         async with HeadlessnessServer._throttle:
             _statistics.throttle_latency = time() - time_start
             _statistics.throttle_latency_max = max(
-                _statistics.throttle_latency_max, _statistics.throttle_latency_max
+                _statistics.throttle_latency_max, _statistics.throttle_latency
             )
             response = await headlessness_server._process_post(parsed_url, headless)
 
+        _statistics.e2e_latency = time() - time_start
+        _statistics.e2e_latency_max = max(
+            _statistics.e2e_latency_max, _statistics.e2e_latency
+        )
         raise response
+
+    @staticmethod
+    async def do_stats(request):
+        parsed_url = urlparse(request.path_qs)
+        parameters = parse_qs(parsed_url.query)
+        format = _get_url_parameter(parameters, "format", "text")
+        if format == "json":
+            text = _statistics.to_json()
+            raise web.HTTPOk(text=text)
+
+        d = _statistics.to_dict()
+        text = ""
+        for key, value in d.items():
+            if isinstance(value, int):
+                s = "{: <22} {: >8}\n".format(key, str(value))
+            else:
+                s = "{: <22} {: >3.2f}\n".format(key, value)
+            text += s
+        raise web.HTTPOk(text=text)
 
 
 def create_logger():
@@ -181,7 +213,9 @@ def create_server(logger, headless):
     app["logger"] = logger
     app["headless"] = headless
 
-    app.router.add_post("/fetch", HeadlessnessServer.do_POST)
+    app.router.add_post("/fetch", HeadlessnessServer.do_fetch)
+    app.router.add_get("/stats", HeadlessnessServer.do_stats)
+    app.router.add_get("/", HeadlessnessServer.do_stats)
     return app, http_interface, http_port
 
 
