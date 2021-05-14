@@ -212,12 +212,10 @@ class EventHandler:
 
 
 class Page:
-    def __init__(
-        self, logger=None, timeout=600.0, keep_alive=False, ad_block=AdBlockDummy()
-    ):
-        self.timeout, self.ad_block, self.keep_alive = timeout, ad_block, keep_alive
+    def __init__(self, logger=None, timeout=60.0, ad_block=AdBlockDummy()):
+        self._timeout, self._ad_block = timeout, ad_block
         # Add stop page https://github.com/puppeteer/puppeteer/issues/3238
-        self.content, self.screenshot, self.browser = None, None, None
+        self.content, self.screenshot, self._browser = None, None, None
         if logger is None:
             logger = logging.getLogger("headlessness")
         self._logger = logger
@@ -225,7 +223,7 @@ class Page:
 
     # https://stackoverflow.com/questions/48986851/puppeteer-get-request-redirects
     async def _get_page(self):
-        page = await self.browser.newPage()
+        page = await self._browser.newPage()
         # https://github.com/pyppeteer/pyppeteer/issues/198
         # await page.setRequestInterception(True)
         page.on(
@@ -255,7 +253,7 @@ class Page:
         'pyppeteer.errors.NetworkError: Protocol error (Page.captureScreenshot): Cannot take screenshot with 0 width.`
         I am trying again until the allotted processing time ends
         """
-        wait_until = self.event_handler.ts_start + timedelta(seconds=self.timeout)
+        wait_until = self.event_handler.ts_start + timedelta(seconds=self._timeout)
         while datetime.now() < wait_until:
             screenshot = await self._take_screenshot(page, url)
             if screenshot is not None:
@@ -282,15 +280,15 @@ class Page:
                 data = f.read()
                 return b64encode(data).decode("utf-8")
 
-    async def load_page(self, request_id, url):
-        self.browser = await get_browser(headless=not self.keep_alive)
+    async def load_page(self, request_id, url, browser, headless):
+        self._browser = browser
         page = await self._get_page()
         try:
             # page.timeout() accepts milliseconds
             await page.goto(
                 url,
                 {
-                    "timeout": int(self.timeout * 1000),
+                    "timeout": int(self._timeout * 1000),
                     "waitUntil": ["load"],  # "networkidle0"],
                 },
             )
@@ -304,10 +302,9 @@ class Page:
         except errors.NetworkError:
             self._logger.exception(f"Failed to get content for {url}")
 
-        self._logger.info(f"Completed {url}, keep_alive={self.keep_alive}")
-        if not self.keep_alive:
+        self._logger.info(f"Completed {url}")
+        if headless:
             await page.close()
-            await self.browser.close()
 
         return
 
@@ -404,7 +401,7 @@ def main(
     url="http://www.google.com",
     request_id=None,
     timeout=5.0,
-    keep_alive=False,
+    headless=False,
     report_type="json",
 ):
     ad_block = AdBlock(["./ads-servers.txt", "./ads-servers.he.txt"])
@@ -412,14 +409,13 @@ def main(
     logger.debug("I am using debug log level")
 
     logger.info(
-        f"Starting Chrome for {url}, keep_alive={keep_alive}, report_type={report_type}"
+        f"Starting Chrome for {url}, headless={headless}, report_type={report_type}"
     )
 
-    page = Page(
-        logger=logger, timeout=timeout, keep_alive=keep_alive, ad_block=ad_block
-    )
+    page = Page(logger=logger, timeout=timeout, ad_block=ad_block)
     loop = asyncio.get_event_loop()
-    loop.run_until_complete(page.load_page(request_id, url))
+    browser = loop.run_until_complete(get_browser(headless))
+    loop.run_until_complete(page.load_page(request_id, url, browser, headless))
 
     report = generate_report(url, request_id, page)
     if report_type == "json":
@@ -428,8 +424,10 @@ def main(
         report_str = dump_har(report, indent=2)
     print(f"{report_str}")
 
-    while keep_alive:
+    while not headless:
         sleep(1.0)
+    page.close()
+    browser.close()
 
 
 if __name__ == "__main__":

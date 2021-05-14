@@ -1,6 +1,10 @@
 import pytest
 import traceback
-from service import create_logger, create_server
+from service import (
+    create_logger,
+    create_server,
+    HeadlessnessServer,
+)
 
 
 @pytest.hookimpl(tryfirst=True)
@@ -25,3 +29,4 @@ async def test_post(aiohttp_client, loop):
         assert False, f"Exception {e}"
 
     assert resp.status == 200, f"Got response for {url} {resp.status} {resp.text}"
+    await HeadlessnessServer.browser.close()

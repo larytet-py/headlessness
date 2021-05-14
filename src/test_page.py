@@ -5,6 +5,7 @@ import pytest
 from process_url import (
     Page,
     AdBlock,
+    get_browser,
 )
 
 testing_url = "http://www.google.com"
@@ -14,7 +15,9 @@ testing_url = "http://www.google.com"
 async def test_load():
     # If hangs check https://github.com/pyppeteer/pyppeteer/issues/111
     page = Page()
-    await page.load_page(None, testing_url)
+    browser = await get_browser(True)
+    await page.load_page(None, testing_url, browser, True)
+    await browser.close()
     page_content = page.content
     assert "google" in page_content, f"Not 'google' {page_content}"
 

@@ -1,5 +1,6 @@
 import asyncio
 from urllib.parse import urlparse, parse_qs
+import easyargs
 import logging
 from threading import Semaphore
 from time import time
@@ -12,6 +13,7 @@ from process_url import (
     Page,
     generate_report,
     AdBlock,
+    get_browser,
 )
 
 
@@ -60,6 +62,8 @@ def _get_url_parameter(parameters, name, default=""):
 class HeadlessnessServer:
     _throttle_max = 4
     _throttle = Semaphore(_throttle_max)
+    browser = None
+    main_lock = asyncio.Lock()
 
     def __init__(self, logger, request):
         self._logger, self._ad_block = logger, request.app["ad_block"]
@@ -86,7 +90,7 @@ class HeadlessnessServer:
         )
         return True
 
-    async def _fetch_page(self, results):
+    async def _fetch_page(self, headless):
         """
         Called after if os.fork() == 0
         """
@@ -94,20 +98,23 @@ class HeadlessnessServer:
         page = Page(
             logger=self._logger,
             timeout=self._timeout,
-            keep_alive=False,
             ad_block=self._ad_block,
         )
         try:
-            await page.load_page(self._transaction_id, self._url)
+            await page.load_page(
+                request_id=self._transaction_id,
+                url=self._url,
+                browser=HeadlessnessServer.browser,
+                headless=headless,
+            )
         except Exception as e:
-            return str(e)
+            return False, str(e)
 
         report = generate_report(self._url, self._transaction_id, page)
         report_str = json.dumps(report, indent=2)
-        results["report"] = report_str
-        return None
+        return True, report_str
 
-    async def _process_post(self, parsed_url):
+    async def _process_post(self, parsed_url, headless):
         if parsed_url.path not in ["/fetch"]:
             _statistics.unknow_post += 1
             err_msg = f"Unknown post {parsed_url.path}"
@@ -125,17 +132,9 @@ class HeadlessnessServer:
         self._timeout = _get_url_parameter(parameters, "timeout", 30.0)
         self._transaction_id = _get_url_parameter(parameters, "transaction_id")
 
-        results = {}
-        error = await self._fetch_page(results)
-        report = results.get("report", f"Failed for {self._url}, results={results}")
-        if error is not None:
-            err_msg = f"Fetch failed for {self._url}: {error}"
-            self._logger.error(err_msg)
-            return web.HTTPNotFound(reason=err_msg)
-
-        error = results.get("error", None)
-        if error is not None:
-            err_msg = f"Fetch failed for {self._url}: {error}"
+        ok, report = await self._fetch_page(headless)
+        if not ok:
+            err_msg = f"Fetch failed for {self._url}: {report}"
             self._logger.error(err_msg)
             return web.HTTPNotFound(reason=err_msg)
 
@@ -143,6 +142,12 @@ class HeadlessnessServer:
 
     @staticmethod
     async def do_POST(request):
+        headless = request.app["headless"]
+        async with HeadlessnessServer.main_lock:
+            if HeadlessnessServer.browser is not None:
+                return
+            HeadlessnessServer.browser = await get_browser(headless=headless)
+
         parsed_url = urlparse(request.path_qs)
         parameters = parse_qs(parsed_url.query)
 
@@ -160,7 +165,7 @@ class HeadlessnessServer:
             raise web.HTTPNotFound(reason=err_msg)
 
         headlessness_server = HeadlessnessServer(logger, request)
-        response = await headlessness_server._process_post(parsed_url)
+        response = await headlessness_server._process_post(parsed_url, headless)
         HeadlessnessServer._throttle.release()
         raise response
 
@@ -175,7 +180,7 @@ def create_logger():
     return logger
 
 
-def create_server(logger):
+def create_server(logger, headless=True):
     """
     https://docs.aiohttp.org/en/v0.22.4/web.html
     """
@@ -186,14 +191,16 @@ def create_server(logger):
     app = web.Application()
     app["ad_block"] = AdBlock(["./ads-servers.txt", "./ads-servers.he.txt"])
     app["logger"] = logger
+    app["headless"] = headless
 
     app.router.add_post("/fetch", HeadlessnessServer.do_POST)
     return app, http_interface, http_port
 
 
-def main():
+@easyargs
+def main(headless=True):
     logger = create_logger()
-    app, http_interface, http_port = create_server(logger)
+    app, http_interface, http_port = create_server(logger, headless)
 
     loop = asyncio.get_event_loop()
     handler = app.make_handler()

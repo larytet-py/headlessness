@@ -26,18 +26,18 @@ xvfb=$!
 x11vnc -nopw -display $DISPLAY -N -forever > /dev/null &
 x11vnc=$!
 
-if [[ "${KEEP_ALIVE}" == "true" ]]; then
-  KEEP_ALIVE_FLAG="--keep_alive"
+if [[ "${HEADLESS}" == "true" ]]; then
+  HEADLESS_FLAG="--headless"
 else
-  KEEP_ALIVE_FLAG=""
+  HEADLESS_FLAG=""
 fi
 
 if [[ -z $URL ]]; then
   # Start HTTP service
-  python3 ./src/service.py --report_type $REPORT_TYPE --timeout $TIMEOUT &
+  python3 ./src/service.py --report_type $REPORT_TYPE --timeout $TIMEOUT $HEADLESS_FLAG &
 else
   # Start chrome
-  python3 ./src/process_url.py --url $URL --report_type $REPORT_TYPE --request_id $REQUEST_ID --timeout $TIMEOUT $KEEP_ALIVE_FLAG &
+  python3 ./src/process_url.py --url $URL --report_type $REPORT_TYPE --request_id $REQUEST_ID --timeout $TIMEOUT $HEADLESS_FLAG &
 fi
 pyppeteer=$!
 
