@@ -138,7 +138,7 @@ class HeadlessnessServer:
             self._logger.error(err_msg)
             return web.HTTPNotFound(reason=err_msg)
 
-        return web.HTTPSuccessful(text=report)
+        return web.HTTPOk(text=report)
 
     @staticmethod
     async def do_POST(request):
