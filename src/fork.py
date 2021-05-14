@@ -7,6 +7,7 @@ import time
 from dataclasses import dataclass
 import pickle
 import signal
+import sys
 
 
 @dataclass
@@ -86,13 +87,18 @@ class AsyncCall:
         is_child = job_pid == 0
 
         start_time = time.time()
+        print(f"Thread parent {threading.current_thread()} {threading.main_thread()}")
         if is_child:
+            print(
+                f"Thread child {threading.current_thread()} {threading.main_thread()}"
+            )
+            sys.stdout.flush()
             os.close(pipe_read)
             # URL extraction is here: call extract_links_binary_multiprocess()
             try:
                 func(data, results)
             except Exception as e:
-                results["exception"] = f"Call to {func} failed: {e}"
+                results["error"] = f"Call to {func} failed: {e}"
             # Copy the results to the pipe. This is a blocking call if there is
             # too much data and  pipe_read is full
             fd_write = os.fdopen(pipe_write, "wb")
@@ -106,6 +112,7 @@ class AsyncCall:
             os._exit(0)
 
         # From here on there is only the parent
+        print(f"Thread parent {threading.current_thread()} {threading.main_thread()}")
         os.close(pipe_write)
         # Read the pipe in the background
         async_read = AsyncRead(pipe_read)
