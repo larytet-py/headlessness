@@ -148,9 +148,12 @@ class HeadlessnessServer(BaseHTTPRequestHandler):
 
         # os.fork + UNIX pipe magic
         error, results = AsyncCall(self.logger)(self.timeout, self._fetch_page, {})
-        if error is not None:
-            self._logger.debug(f"Fetch failed for {self.url}: {error}")
         report = results.get("report", f"Failed for {self.url}, results={results}")
+        if error is not None:
+            err_msg = f"Fetch failed for {self.url}: {error}"
+            self._logger.error(err_msg)
+            self._400(err_msg)
+            return
 
         self._200(report)
 
