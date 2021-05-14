@@ -50,3 +50,5 @@ remmina -c $PWD/local-chrome.remmina
 * https://github.com/wirepair/gcd
 * https://github.com/pyppeteer/pyppeteer
 * https://w3c.github.io/web-performance/specs/HAR/Overview.html
+* https://github.com/nbasker/tools/blob/master/asyncioeval/ticker.py
+* https://aiomultiprocess.omnilib.dev/en/stable/
