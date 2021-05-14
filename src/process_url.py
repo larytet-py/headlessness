@@ -277,6 +277,7 @@ class Page:
         # "True" is deafult value
         # 30-50% reduction in processing time
         await page.setCacheEnabled(enabled=True)
+        page.setDefaultNavigationTimeout(int(self._timeout * 1000))
 
         # https://github.com/pyppeteer/pyppeteer/issues/198
         # await page.setRequestInterception(True)
@@ -338,10 +339,10 @@ class Page:
         self._browser = browser
         page = await self._get_page()
         try:
-            # page.timeout() accepts milliseconds
             await page.goto(
                 url,
                 {
+                    # page.timeout() accepts milliseconds
                     "timeout": int(self._timeout * 1000),
                     "waitUntil": ["load"],  # "networkidle0"],
                 },
@@ -349,7 +350,7 @@ class Page:
         except errors.TimeoutError:
             self._logger.exception(f"Failed to load {url}")
 
-        self.screenshot = await self._take_screenshot_until_succeds(page, url)
+        # self.screenshot = await self._take_screenshot_until_succeds(page, url)
 
         try:
             self.content = await page.content()
