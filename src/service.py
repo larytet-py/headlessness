@@ -144,17 +144,15 @@ class HeadlessnessServer:
     async def do_POST(request):
         headless = request.app["headless"]
         async with HeadlessnessServer.main_lock:
-            if HeadlessnessServer.browser is not None:
-                return
-            HeadlessnessServer.browser = await get_browser(headless=headless)
+            if HeadlessnessServer.browser is None:
+                HeadlessnessServer.browser = await get_browser(headless=headless)
 
         parsed_url = urlparse(request.path_qs)
         parameters = parse_qs(parsed_url.query)
-
         transaction_id = _get_url_parameter(parameters, "transaction_id")
         logger = LoggerAdapter(request.app["logger"], transaction_id)
 
-        logger.debug(
+        logger.info(
             "POST request, path %s, headers %s",
             str(request.path_qs),
             str(request.headers),
