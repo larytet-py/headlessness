@@ -187,17 +187,18 @@ def create_server(logger):
     app["logger"] = logger
 
     app.router.add_post("/fetch", HeadlessnessServer.do_POST)
-    loop = asyncio.get_event_loop()
-    handler = app.make_handler()
-    f = loop.create_server(handler, http_interface, http_port)
-    srv = loop.run_until_complete(f)
-    return srv, loop, http_interface, http_port
+    return app, http_interface, http_port
 
 
 def main():
     logger = create_logger()
-    _, loop, http_interface, http_port = create_server(logger)
-    logger.info(f"Serving on {http_interface}:{http_port}")
+    app, http_interface, http_port = create_server(logger)
+
+    loop = asyncio.get_event_loop()
+    handler = app.make_handler()
+    f = loop.create_server(handler, http_interface, http_port)
+    srv = loop.run_until_complete(f)
+    logger.info(f"Serving on {http_interface}:{http_port} {srv}")
     loop.run_forever()
 
 
