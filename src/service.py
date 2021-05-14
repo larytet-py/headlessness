@@ -46,6 +46,8 @@ class LoggerAdapter(logging.LoggerAdapter):
 
 
 def _get_url_parameter(parameters, name, default=""):
+    if default is None:
+        return parameters.get(name, [None])[0]
     if isinstance(default, str):
         return parameters.get(name, [default])[0]
     if isinstance(default, int):
