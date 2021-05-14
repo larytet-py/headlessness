@@ -13,7 +13,7 @@ from process_url import (
     generate_report,
     AdBlock,
 )
-from fork import call_timeout
+from fork import AsyncCall
 
 
 @dataclass
@@ -144,7 +144,7 @@ class HeadlessnessServer(BaseHTTPRequestHandler):
         data = {}
 
         # os.fork + UNIX pipe magic
-        call_timeout(self.timeout, self._fetch_page, data)
+        AsyncCall(self.timeout, self._fetch_page, data)
 
         logs = data.get("logs", f"No error log {data}")
         report = data.get("report", f"Failed {logs}")

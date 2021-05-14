@@ -5,6 +5,8 @@ import threading
 import psutil
 import time
 from dataclasses import dataclass
+import pickle
+import signal
 
 
 @dataclass
@@ -51,7 +53,7 @@ def _join_process(job_pid, timeout):
     # Typical processing time is 100ms I want to reduce latency impact
     # 10ms looks ok
     polling_time = min(0.1 * timeout, 0.010)
-    while time.time() - time_start < timeout and job_is_alive(job_pid):
+    while time.time() - time_start < timeout and _job_is_alive(job_pid):
         time.sleep(polling_time)
         continue
 
@@ -104,11 +106,11 @@ class AsyncCall:
         async_read = AsyncRead(pipe_read)
         async_read.start()
         # Wait for the child to complete: polling+deadline
-        join_process(job_pid, 0.8 * timeout)
+        _join_process(job_pid, 0.8 * timeout)
 
         # Try to kill the subprocess no matter what. Killing the process will close the pipe_write
         # Only the pipe's 64KB buffer survives. Hopefully async_read collected the data
-        kill_bill(job_pid, timeout, start_time)
+        self._kill_bill(job_pid, timeout, start_time)
 
         # Get the data collected by the background thread
         async_read.join()
@@ -116,12 +118,12 @@ class AsyncCall:
 
         return error, results
 
-    def kill_bill(self, job_pid, timeout, start_time):
+    def _kill_bill(self, job_pid, timeout, start_time):
         elapsed = time.time() - start_time
         if elapsed > timeout:
             statistics.deadline_reached += 1
 
-        is_alive = job_is_alive(job_pid)
+        is_alive = _job_is_alive(job_pid)
         if is_alive:
             statistics.still_is_alive += 1
             error = f"Deadline: {timeout}s reached, elapsed {elapsed}s, {job_pid}"
