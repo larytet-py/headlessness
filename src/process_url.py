@@ -154,8 +154,7 @@ class EventHandler:
             ts_request=datetime.now(),
             is_ad=is_ad,
         )
-        async with self._lock:
-            self.requests_info[request_id] = requests_info
+        self.requests_info[request_id] = requests_info
 
         if is_ad:
             return False
@@ -193,13 +192,13 @@ class EventHandler:
             request_info.ts_response - request_info.ts_request
         ).total_seconds()
         self.ts_last = datetime.now()
-        async with self._lock:
-            self.requests_info[request_id] = request_info
+        self.requests_info[request_id] = request_info
 
     async def request_interception(self, r):
         # https://github.com/pyppeteer/pyppeteer/issues/198
         r.__setattr__("_allowInterception", True)
-        keep_going = await self._process_request(r)
+        async with self._lock:
+            keep_going = await self._process_request(r)
         if keep_going:
             return await r.continue_()
 
@@ -208,7 +207,8 @@ class EventHandler:
 
     async def response_interception(self, r):
         r.__setattr__("_allowInterception", True)
-        await self._process_response(r)
+        async with self._lock:
+            await self._process_response(r)
         return
 
     async def request_will_be_sent(self, e):
