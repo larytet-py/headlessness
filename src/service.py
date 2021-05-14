@@ -180,7 +180,7 @@ def create_logger():
     return logger
 
 
-def create_server(logger, headless=True):
+def create_server(logger, headless):
     """
     https://docs.aiohttp.org/en/v0.22.4/web.html
     """

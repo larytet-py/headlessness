@@ -34,7 +34,7 @@ fi
 
 if [[ -z $URL ]]; then
   # Start HTTP service
-  python3 ./src/service.py --report_type $REPORT_TYPE --timeout $TIMEOUT $HEADLESS_FLAG &
+  python3 ./src/service.py $HEADLESS_FLAG &
 else
   # Start chrome
   python3 ./src/process_url.py --url $URL --report_type $REPORT_TYPE --request_id $REQUEST_ID --timeout $TIMEOUT $HEADLESS_FLAG &

@@ -14,7 +14,7 @@ def pytest_keyboard_interrupt(excinfo):
 
 async def test_post(aiohttp_client, loop):
     logger = create_logger()
-    app, http_interface, http_port = create_server(logger)
+    app, http_interface, http_port = create_server(logger, True)
     logger.info(f"Serving on {http_interface}:{http_port}")
 
     url = "/futch?url=http%3A%2F%2Fgoogle.com&transaction_id=2"
