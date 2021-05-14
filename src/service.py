@@ -15,6 +15,7 @@ from process_url import (
 )
 from fork import call_timeout
 
+
 @dataclass
 class Statistics:
     timer_1s: int = 0
@@ -112,12 +113,12 @@ class HeadlessnessServer(BaseHTTPRequestHandler):
     def _fetch_page(self):
         self.logger.info(f"Fetching {self.url}")
         page = Page(
-            self._logger, timeout=timeout, keep_alive=False, ad_block=self.ad_block
+            self._logger, timeout=self.timeout, keep_alive=False, ad_block=self.ad_block
         )
         asyncio_loop = asyncio.get_event_loop()
         asyncio_loop.run_until_complete(page.load_page(self._transaction_id, self.url))
 
-        report = generate_report(url, self._transaction_id, page)
+        report = generate_report(self.url, self._transaction_id, page)
         report_str = json.dumps(report, indent=2)
         return report_str
 
@@ -138,16 +139,16 @@ class HeadlessnessServer(BaseHTTPRequestHandler):
             self._400(err_msg)
             return
 
-        timeout = _get_url_parameter(parameters, "timeout", 30.0)
+        self.timeout = _get_url_parameter(parameters, "timeout", 30.0)
 
         data = {}
 
         # os.fork + UNIX pipe magic
-        call_timeout(timeout, self._fetch_page, data)
+        call_timeout(self.timeout, self._fetch_page, data)
 
-        logs=data.get("logs", f"No error log {data}")
-        report=data.get("report", f"Failed {logs}")
-        
+        logs = data.get("logs", f"No error log {data}")
+        report = data.get("report", f"Failed {logs}")
+
         self._200(report)
 
     def do_POST(self):
