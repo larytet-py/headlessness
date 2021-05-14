@@ -198,6 +198,7 @@ def main():
     )
     http_server_thread = Thread(target=http_server.serve_forever)
     http_server_thread.start()
+    logger.info(f"I am listening {http_interface}:{http_port}")
     return http_server_thread, http_server
 
 
