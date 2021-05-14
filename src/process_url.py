@@ -125,8 +125,9 @@ class EventHandler:
         if logger is None:
             logger = logging.getLogger("headlessness")
         self._logger = logger
+        self._lock = asyncio.Lock()
 
-    def _process_request(self, r):
+    async def _process_request(self, r):
         if not hasattr(r, "url"):
             self._logger.error(f"request is missing url {r.__dir__()}")
             return True
@@ -153,14 +154,15 @@ class EventHandler:
             ts_request=datetime.now(),
             is_ad=is_ad,
         )
-        self.requests_info[request_id] = requests_info
+        async with self._lock:
+            self.requests_info[request_id] = requests_info
 
         if is_ad:
             return False
 
         return True
 
-    def _process_response(self, r):
+    async def _process_response(self, r):
         if not hasattr(r, "url"):
             self._logger.error(f"response is missing url {r.__dir__()}")
             return
@@ -191,12 +193,13 @@ class EventHandler:
             request_info.ts_response - request_info.ts_request
         ).total_seconds()
         self.ts_last = datetime.now()
-        self.requests_info[request_id] = request_info
+        async with self._lock:
+            self.requests_info[request_id] = request_info
 
     async def request_interception(self, r):
         # https://github.com/pyppeteer/pyppeteer/issues/198
         r.__setattr__("_allowInterception", True)
-        keep_going = self._process_request(r)
+        keep_going = await self._process_request(r)
         if keep_going:
             return await r.continue_()
 
@@ -205,7 +208,7 @@ class EventHandler:
 
     async def response_interception(self, r):
         r.__setattr__("_allowInterception", True)
-        self._process_response(r)
+        await self._process_response(r)
         return
 
     async def request_will_be_sent(self, e):
@@ -221,7 +224,8 @@ class EventHandler:
             return
 
         self._logger.debug(f"Redirect {pretty_printer.pformat(e)}")
-        self.redirects.append(e["documentURL"])
+        async with self._lock:
+            self.redirects.append(e["documentURL"])
 
 
 class Page:
@@ -412,6 +416,36 @@ def create_logger():
     logger.setLevel(loglevel)
     logger.debug("I am using debug log level")
     return logger
+
+
+class PageTrace:
+    def __init__(self, logger):
+        self._logger = logger
+        self._active_pages = set()
+        self._for_removal = set()
+        self._lock = asyncio.Lock()
+
+    async def add(self, page):
+        async with self._lock:
+            self._active_pages.add(page)
+
+    async def rm(self, page, browser):
+        async with self._lock:
+            self._for_removal.add(page)
+            await self._cleanup(browser)
+
+    async def _cleanup(self, browser):
+        open_pages = await browser.pages()
+        _for_removal_new = set()
+        for open_page in open_pages:
+            if open_page not in self._for_removal:
+                continue
+            self._logger.error(
+                f"Found stuck page for {open_page.url}, isClosed {open_page.isClosed()}"
+            )
+            await open_page.close()
+            _for_removal_new.add(open_page)
+        self._for_removal = _for_removal_new
 
 
 @easyargs
