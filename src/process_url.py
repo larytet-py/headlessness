@@ -116,6 +116,38 @@ class RequestInfo:
     is_ad: bool = False
 
 
+class _PageTrace:
+    _lock = asyncio.Lock()
+
+    def __init__(self, logger):
+        self._logger = logger
+        self._active_pages = set()
+        self._for_removal = set()
+        self._lock = asyncio.Lock()
+
+    async def add(self, page):
+        async with self._lock:
+            self._active_pages.add(page)
+
+    async def rm(self, page, browser):
+        async with self._lock:
+            self._for_removal.add(page)
+            await self._cleanup(browser)
+
+    async def _cleanup(self, browser):
+        open_pages = await browser.pages()
+        _for_removal_new = set()
+        for open_page in open_pages:
+            if open_page not in self._for_removal:
+                continue
+            self._logger.error(
+                f"Found stuck page for {open_page.url}, isClosed {open_page.isClosed()}"
+            )
+            await open_page.close()
+            _for_removal_new.add(open_page)
+        self._for_removal = _for_removal_new
+
+
 class EventHandler:
     def __init__(self, ad_block, logger=None):
         self.requests_info = {}
@@ -229,6 +261,8 @@ class EventHandler:
 
 
 class Page:
+    _trace = None
+
     def __init__(self, logger=None, timeout=60.0, ad_block=AdBlockDummy()):
         self._timeout, self._ad_block = timeout, ad_block
         # Add stop page https://github.com/puppeteer/puppeteer/issues/3238
@@ -237,10 +271,14 @@ class Page:
             logger = logging.getLogger("headlessness")
         self._logger = logger
         self.event_handler = EventHandler(ad_block, self._logger)
+        # Race condition
+        if Page._trace is None:
+            Page._trace = _PageTrace(logger)
 
     # https://stackoverflow.com/questions/48986851/puppeteer-get-request-redirects
     async def _get_page(self):
         page = await self._browser.newPage()
+        await Page._trace.add(page)
 
         # "True" is deafult value
         # 30-50% reduction in processing time
@@ -317,7 +355,7 @@ class Page:
         except errors.TimeoutError:
             self._logger.exception(f"Failed to load {url}")
 
-        self.screenshot = await self._take_screenshot_until_succeds(page, url)
+        # self.screenshot = await self._take_screenshot_until_succeds(page, url)
 
         try:
             self.content = await page.content()
@@ -326,6 +364,7 @@ class Page:
 
         self._logger.info(f"Completed {url}")
         await page.close()
+        await Page._trace.rm(page, browser)
 
         return
 
@@ -416,36 +455,6 @@ def create_logger():
     logger.setLevel(loglevel)
     logger.debug("I am using debug log level")
     return logger
-
-
-class PageTrace:
-    def __init__(self, logger):
-        self._logger = logger
-        self._active_pages = set()
-        self._for_removal = set()
-        self._lock = asyncio.Lock()
-
-    async def add(self, page):
-        async with self._lock:
-            self._active_pages.add(page)
-
-    async def rm(self, page, browser):
-        async with self._lock:
-            self._for_removal.add(page)
-            await self._cleanup(browser)
-
-    async def _cleanup(self, browser):
-        open_pages = await browser.pages()
-        _for_removal_new = set()
-        for open_page in open_pages:
-            if open_page not in self._for_removal:
-                continue
-            self._logger.error(
-                f"Found stuck page for {open_page.url}, isClosed {open_page.isClosed()}"
-            )
-            await open_page.close()
-            _for_removal_new.add(open_page)
-        self._for_removal = _for_removal_new
 
 
 @easyargs
