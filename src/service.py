@@ -1,9 +1,7 @@
-import asyncio
 from urllib.parse import urlparse, parse_qs
-import asyncio
 import logging
-from threading import Semaphore, Thread
-from time import time, sleep
+from threading import Semaphore
+from time import time
 from os import environ
 from dataclasses import dataclass
 import json
@@ -60,12 +58,12 @@ def _get_url_parameter(parameters, name, default=""):
 
 
 class HeadlessnessServer:
-    def __init__(self, logger):
-        self.logger = logger
-        self.ad_block = AdBlock(["./ads-servers.txt", "./ads-servers.he.txt"])
+    def __init__(self, logger, request):
+        self._logger, self._ad_block = logger, request.app["ad_block"]
         # default process at most 1 query
         self._throttle_max, self._throttle = 1, Semaphore(1)
 
+    @staticmethod
     def _check_throttle(self):
         time_start = time()
         if not HeadlessnessServer._throttle.acquire(blocking=True, timeout=40.0):
@@ -86,20 +84,23 @@ class HeadlessnessServer:
         )
         return True
 
-    def _fetch_page(self, data, results):
+    async def _fetch_page(self, results):
         """
         Called after if os.fork() == 0
         """
-        self.logger.info(f"Fetching {url}")
+        self._logger.info(f"Fetching {url}")
         page = Page(
-            self._logger, timeout=self.timeout, keep_alive=False, ad_block=self.ad_block
+            logger=self._logger,
+            timeout=self._timeout,
+            keep_alive=False,
+            ad_block=self._ad_block,
         )
-        await page.load_page(transaction_id, url)
-        report = generate_report(url, transaction_id, page)
+        await page.load_page(self._transaction_id, self._url)
+        report = generate_report(self._url, self._transaction_id, page)
         report_str = json.dumps(report, indent=2)
         results["report"] = report_str
 
-    def _process_post(self, parsed_url):
+    async def _process_post(self, parsed_url):
         if parsed_url.path not in ["/fetch"]:
             _statistics.unknow_post += 1
             err_msg = f"Unknown post {parsed_url.path}"
@@ -107,18 +108,17 @@ class HeadlessnessServer:
             return web.HTTPNotFound(reason=err_msg)
 
         parameters = parse_qs(parsed_url.query)
-        url = _get_url_parameter(parameters, "url", None)
-        if url is None:
+        self._url = _get_url_parameter(parameters, "url", None)
+        if self._ is None:
             _statistics.bad_url_parameters += 1
             err_msg = f"Missing URL parameter {parsed_url.path}"
             self._logger.error(err_msg)
             return web.HTTPNotFound(reason=err_msg)
 
-        self.timeout = _get_url_parameter(parameters, "timeout", 30.0)
+        self._timeout = _get_url_parameter(parameters, "timeout", 30.0)
+        self._transaction_id = _get_url_parameter(parameters, "transaction_id")
 
-        # asyncio releise on signal, requires main thread
-        # I use os.fork + UNIX pipe magic
-        error, results = AsyncCall(self.logger)(self.timeout, self._fetch_page, {})
+        await self._fetch_page(results)
         report = results.get("report", f"Failed for {url}, results={results}")
         if error is not None:
             err_msg = f"Fetch failed for {url}: {error}"
@@ -133,24 +133,26 @@ class HeadlessnessServer:
 
         return web.HTTPSuccessful(reason=report)
 
-    async def do_POST(self, request):
+    @staticmethod
+    async def do_POST(request):
         parsed_url = urlparse(request.path_qs)
         parameters = parse_qs(parsed_url.query)
 
         transaction_id = _get_url_parameter(parameters, "transaction_id")
-        self._logger = LoggerAdapter(self.logger,transaction_id)
-        self._logger.debug(
+        logger = LoggerAdapter(self.logger, transaction_id)
+        logger.debug(
             "POST request, path %s, headers %s", str(self.path), str(self.headers)
         )
-
-        if not self._check_throttle():
+        if not HeadlessnessServer._check_throttle():
             err_msg = "Too many requests"
             self._logger.error(err_msg)
             raise web.HTTPNotFound(reason=err_msg)
 
-        response = self._process_post(parsed_url)
+        headlessness_server = HeadlessnessServer(logger, request)
+        response = await self._process_post(parsed_url)
         HeadlessnessServer._throttle.release()
         raise response
+
 
 def main():
     logger = logging.getLogger("headlessness")
@@ -164,15 +166,13 @@ def main():
     http_interface = environ.get("INTERFACE", "0.0.0.0")
     logger.info(f"I am listening {http_interface}:{http_port}")
 
-
-    headlessness_server = HeadlessnessServer()
     app = web.Application()
-    app.router.add_post('/fetch', headlessness_server.do_POST)
+    app["ad_block"] = AdBlock(["./ads-servers.txt", "./ads-servers.he.txt"])
+
+    app.router.add_post("/fetch", do_POST)
     web.run_app(app, host=http_interface, port=http_port)
+
 
 if __name__ == "__main__":
     is_running = True
     main()
-    while is_running:
-        sleep(1.0)
-        _statistics.timer_1s += 1
