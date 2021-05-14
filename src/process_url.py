@@ -303,8 +303,7 @@ class Page:
             self._logger.exception(f"Failed to get content for {url}")
 
         self._logger.info(f"Completed {url}")
-        if headless:
-            await page.close()
+        await page.close()
 
         return
 
@@ -394,6 +393,7 @@ def create_logger():
     loglevel = environ.get("LOG_LEVEL", "INFO").upper()
     logger.setLevel(loglevel)
     logger.debug("I am using debug log level")
+    return logger
 
 
 @easyargs

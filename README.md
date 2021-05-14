@@ -9,7 +9,7 @@ black src/. && docker build --build-arg CACHEBUST=$(date +%s) -t chrome .
 
 Check a single URL
 ```
-docker run --rm -p 5900:5900 -e HEADLESS="true" -e TIMEOUT="30.0" -e REQUEST_ID="1" -e URL="https://www.w3schools.com/" chrome 
+docker run --rm -p 5900:5900 -e REPORT_TYPE="json" -e HEADLESS="true" -e TIMEOUT="30.0" -e REQUEST_ID="1" -e URL="https://www.w3schools.com/" chrome 
 ```
 or start the service
 ```

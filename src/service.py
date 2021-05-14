@@ -196,7 +196,7 @@ def create_server(logger, headless):
 
 
 @easyargs
-def main(headless=True):
+def main(headless=False):
     logger = create_logger()
     app, http_interface, http_port = create_server(logger, headless)
 
