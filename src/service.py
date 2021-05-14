@@ -114,8 +114,9 @@ class HeadlessnessServer(BaseHTTPRequestHandler):
         return True
 
     def _fetch_page(self, data, results):
-        print(f"AsyncCall  Fetching {self.url}")
-        sys.stdout.flush()
+        """
+        Called after if os.fork() == 0
+        """
         self.logger.info(f"Fetching {self.url}")
         page = Page(
             self._logger, timeout=self.timeout, keep_alive=False, ad_block=self.ad_block
