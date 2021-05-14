@@ -146,7 +146,8 @@ class HeadlessnessServer(BaseHTTPRequestHandler):
 
         self.timeout = _get_url_parameter(parameters, "timeout", 30.0)
 
-        # os.fork + UNIX pipe magic
+        # asyncio releise on signal, requires main thread
+        # I use os.fork + UNIX pipe magic
         error, results = AsyncCall(self.logger)(self.timeout, self._fetch_page, {})
         report = results.get("report", f"Failed for {self.url}, results={results}")
         if error is not None:
