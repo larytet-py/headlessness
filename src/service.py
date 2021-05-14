@@ -60,7 +60,7 @@ def _get_url_parameter(parameters, name, default=""):
 
 
 class HeadlessnessServer:
-    _throttle_max = 4
+    _throttle_max = 1
     _throttle = Semaphore(_throttle_max)
     browser = None
     main_lock = asyncio.Lock()

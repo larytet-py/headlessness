@@ -426,7 +426,6 @@ def main(
 
     while not headless:
         sleep(1.0)
-    page.close()
     browser.close()
 
 
