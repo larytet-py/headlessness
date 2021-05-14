@@ -30,7 +30,10 @@ def test_post():
     ), f"Got response for {url} {request_result.status_code} {request_result.text}"
 
     url = "http://0.0.0.0:8081/fetch?url=http%3A%2F%2Fgoogle.com&transaction_id=1"
-    request_result = post(url)
+    try:
+        request_result = post(url)
+    except Exception:
+        assert False, "Exception"
     assert (
         request_result.status_code == 200
     ), f"Got response for {url} {request_result.status_code} {request_result.text}"

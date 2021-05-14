@@ -74,8 +74,10 @@ class AsyncRead(threading.Thread):
 
 
 class AsyncCall:
-    def __call__(self, timeout, func, logger, data):
-        self.timeout, self.func, self.logger, self.data = timeout, func, logger, data
+    def __init__(self, logger):
+        self.logger = logger
+
+    def __call__(self, timeout, func, data):
 
         pipe_read, pipe_write = os.pipe()
         results, error = {}, None
@@ -87,13 +89,16 @@ class AsyncCall:
         if is_child:
             os.close(pipe_read)
             # URL extraction is here: call extract_links_binary_multiprocess()
-            func(data, results)
+            try:
+                func(data, results)
+            except Exception as e:
+                results["exception"] = f"Call to {func} failed: {e}"
             # Copy the results to the pipe. This is a blocking call if there is
             # too much data and  pipe_read is full
             fd_write = os.fdopen(pipe_write, "wb")
             pickle.dump(results, fd_write)
             fd_write.flush()
-            logger.debug(f"Pickle dump results {results}")
+            self.logger.debug(f"Pickle dump results {results}")
             fd_write.close()
 
             # Hasta la vista

@@ -7,6 +7,7 @@ from time import time, sleep
 from os import environ
 from dataclasses import dataclass
 import json
+import sys
 
 from process_url import (
     Page,
@@ -112,7 +113,9 @@ class HeadlessnessServer(BaseHTTPRequestHandler):
         )
         return True
 
-    def _fetch_page(self):
+    def _fetch_page(self, data, results):
+        print(f"AsyncCall  Fetching {self.url}")
+        sys.stdout.flush()
         self.logger.info(f"Fetching {self.url}")
         page = Page(
             self._logger, timeout=self.timeout, keep_alive=False, ad_block=self.ad_block
@@ -122,7 +125,7 @@ class HeadlessnessServer(BaseHTTPRequestHandler):
 
         report = generate_report(self.url, self._transaction_id, page)
         report_str = json.dumps(report, indent=2)
-        return report_str
+        results["report"] = report_str
 
     def _process_post(self, parsed_url):
         if parsed_url.path not in ["/fetch"]:
@@ -143,13 +146,11 @@ class HeadlessnessServer(BaseHTTPRequestHandler):
 
         self.timeout = _get_url_parameter(parameters, "timeout", 30.0)
 
-        data = {}
-
         # os.fork + UNIX pipe magic
-        AsyncCall(self.timeout, self._fetch_page, data)
-
-        logs = data.get("logs", f"No error log {data}")
-        report = data.get("report", f"Failed {logs}")
+        error, results = AsyncCall(self.logger)(self.timeout, self._fetch_page, {})
+        if error is not None:
+            self._logger.debug(f"Fetch failed for {self.url}: {error}")
+        report = results.get("report", f"Failed for {self.url}, results={results}")
 
         self._200(report)
 
