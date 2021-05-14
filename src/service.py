@@ -7,7 +7,6 @@ from time import time, sleep
 from os import environ
 from dataclasses import dataclass
 import json
-import sys
 
 from process_url import (
     Page,
