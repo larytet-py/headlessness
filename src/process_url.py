@@ -17,6 +17,7 @@ from shutil import rmtree
 from os import path
 from base64 import b64encode
 from time import sleep
+from time import time
 from os import environ
 
 pretty_printer = PrettyPrinter(indent=4)
@@ -114,38 +115,6 @@ class RequestInfo:
     ts_last: datetime = None
     elapsed: float = 0.0
     is_ad: bool = False
-
-
-class _PageTrace:
-    _lock = asyncio.Lock()
-
-    def __init__(self, logger):
-        self._logger = logger
-        self._active_pages = set()
-        self._for_removal = set()
-        self._lock = asyncio.Lock()
-
-    async def add(self, page):
-        async with self._lock:
-            self._active_pages.add(page)
-
-    async def rm(self, page, browser):
-        async with self._lock:
-            self._for_removal.add(page)
-            await self._cleanup(browser)
-
-    async def _cleanup(self, browser):
-        open_pages = await browser.pages()
-        _for_removal_new = set()
-        for open_page in open_pages:
-            if open_page not in self._for_removal:
-                continue
-            self._logger.error(
-                f"Found stuck page for {open_page.url}, isClosed {open_page.isClosed()}"
-            )
-            await open_page.close()
-            _for_removal_new.add(open_page)
-        self._for_removal = _for_removal_new
 
 
 class EventHandler:
@@ -260,8 +229,35 @@ class EventHandler:
             self.redirects.append(e["documentURL"])
 
 
+class _PageTrace:
+    _created_pages = {}
+    _lock = asyncio.Lock()
+
+    @staticmethod
+    async def add(page):
+        async with _PageTrace._lock:
+            _PageTrace._created_pages[page] = time()
+
+    @staticmethod
+    async def cleanup(browser):
+        async with _PageTrace._lock:
+            await _PageTrace._cleanup(browser)
+
+    @staticmethod
+    async def _cleanup(browser):
+        now = time()
+        pages = await browser.pages()
+        for page in pages:
+            if page not in _PageTrace._created_pages:
+                continue
+            ts = _PageTrace._created_pages[page]
+            if now - ts > 30.0:
+                await page.close()
+                del _PageTrace._created_pages[page]
+
+
 class Page:
-    _trace = None
+    _page_trace = _PageTrace()
 
     def __init__(self, logger=None, timeout=60.0, ad_block=AdBlockDummy()):
         self._timeout, self._ad_block = timeout, ad_block
@@ -271,14 +267,12 @@ class Page:
             logger = logging.getLogger("headlessness")
         self._logger = logger
         self.event_handler = EventHandler(ad_block, self._logger)
-        # Race condition
-        if Page._trace is None:
-            Page._trace = _PageTrace(logger)
 
     # https://stackoverflow.com/questions/48986851/puppeteer-get-request-redirects
     async def _get_page(self):
+        await Page._page_trace.cleanup(self._browser)
         page = await self._browser.newPage()
-        await Page._trace.add(page)
+        await Page._page_trace.add(page)
 
         # "True" is deafult value
         # 30-50% reduction in processing time
@@ -355,7 +349,7 @@ class Page:
         except errors.TimeoutError:
             self._logger.exception(f"Failed to load {url}")
 
-        # self.screenshot = await self._take_screenshot_until_succeds(page, url)
+        self.screenshot = await self._take_screenshot_until_succeds(page, url)
 
         try:
             self.content = await page.content()
@@ -364,7 +358,6 @@ class Page:
 
         self._logger.info(f"Completed {url}")
         await page.close()
-        await Page._trace.rm(page, browser)
 
         return
 
