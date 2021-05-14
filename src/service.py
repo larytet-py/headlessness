@@ -58,7 +58,8 @@ def _get_url_parameter(parameters, name, default=""):
 
 
 class HeadlessnessServer:
-    _throttle_max, _throttle = 1, Semaphore(1)
+    _throttle_max = 4
+    _throttle = Semaphore(_throttle_max)
 
     def __init__(self, logger, request):
         self._logger, self._ad_block = logger, request.app["ad_block"]
