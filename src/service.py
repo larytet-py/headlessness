@@ -2,7 +2,6 @@ import asyncio
 from urllib.parse import urlparse, parse_qs
 import easyargs
 import logging
-from threading import Semaphore
 from time import time
 from os import environ
 from dataclasses import dataclass
@@ -23,10 +22,6 @@ class Statistics:
 
     throttle_latency: float = 0
     throttle_latency_max: float = 0
-    throttle_failed: int = 0
-    throttle_ok: int = 0
-    throttle_pending_max: int = 0
-    throttle_pending: int = 0
     bad_url_parameters: int = 0
 
     resp_200: int = 0
@@ -60,8 +55,8 @@ def _get_url_parameter(parameters, name, default=""):
 
 
 class HeadlessnessServer:
-    _throttle_max = 4
-    _throttle = Semaphore(_throttle_max)
+    _throttle_max = 1
+    _throttle = asyncio.Semaphore(_throttle_max)
 
     browser = None
     main_lock = asyncio.Lock()
@@ -69,27 +64,6 @@ class HeadlessnessServer:
     def __init__(self, logger, request):
         self._logger, self._ad_block = logger, request.app["ad_block"]
         # default process at most 1 query
-
-    @staticmethod
-    def _check_throttle():
-        time_start = time()
-        if not HeadlessnessServer._throttle.acquire(blocking=True, timeout=40.0):
-            _statistics.throttle_failed += 1
-            return False
-
-        _statistics.throttle_ok += 1
-        elapsed_time = time() - time_start
-        _statistics.throttle_latency = elapsed_time
-        _statistics.throttle_latency_max = max(
-            _statistics.throttle_latency_max, _statistics.throttle_latency_max
-        )
-        _statistics.throttle_pending = (
-            HeadlessnessServer._throttle_max - HeadlessnessServer._throttle._value
-        )
-        _statistics.throttle_pending_max = max(
-            _statistics.throttle_pending_max, _statistics.throttle_pending
-        )
-        return True
 
     async def _fetch_page(self, headless):
         """
@@ -171,14 +145,16 @@ class HeadlessnessServer:
             str(request.path_qs),
             str(request.headers),
         )
-        if not HeadlessnessServer._check_throttle():
-            err_msg = "Too many requests"
-            logger.error(err_msg)
-            raise web.HTTPNotFound(reason=err_msg)
 
         headlessness_server = HeadlessnessServer(logger, request)
-        response = await headlessness_server._process_post(parsed_url, headless)
-        HeadlessnessServer._throttle.release()
+        time_start = time()
+        async with HeadlessnessServer._throttle:
+            _statistics.throttle_latency = time() - time_start
+            _statistics.throttle_latency_max = max(
+                _statistics.throttle_latency_max, _statistics.throttle_latency_max
+            )
+            response = await headlessness_server._process_post(parsed_url, headless)
+
         raise response
 
 
